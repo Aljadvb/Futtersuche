@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.ui.Modifier
 import com.example.futtersuche.data.Campaigns
+import com.example.futtersuche.data.ProgressStore
 import com.example.futtersuche.ui.GameScreen
 import com.example.futtersuche.ui.theme.FuttersucheTheme
 
@@ -16,6 +17,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        val store = ProgressStore(applicationContext)
         setContent {
             FuttersucheTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
@@ -23,6 +25,7 @@ class MainActivity : ComponentActivity() {
                     // Den Auswahlbildschirm bauen wir in Schritt 6.
                     GameScreen(
                         campaign = Campaigns.hoppel,
+                        store = store,
                         modifier = Modifier.padding(innerPadding),
                     )
                 }
