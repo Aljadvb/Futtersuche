@@ -1,5 +1,6 @@
 package com.example.futtersuche.game
 
+import kotlin.math.abs
 import kotlin.random.Random
 
 /**
@@ -9,10 +10,16 @@ import kotlin.random.Random
  */
 data class Tile(val id: Long, val kind: Int)
 
+/** Eine Position auf dem Spielfeld (Zeile, Spalte – beides ab 0 gezählt). */
+data class Pos(val row: Int, val col: Int) {
+    /** true, wenn [other] direkt links, rechts, oben oder unten daneben liegt. */
+    fun isNeighborOf(other: Pos): Boolean = abs(row - other.row) + abs(col - other.col) == 1
+}
+
 /**
  * Das Spielfeld. Es ist unveränderlich: Jede Änderung erzeugt ein neues Board.
  * Das ist für Jetpack Compose praktisch, weil es so Änderungen sicher bemerkt.
- * Ein Feld kann leer sein (null) – das brauchen wir ab Schritt 2/3.
+ * Ein Feld kann leer sein (null), z. B. nachdem Steine entfernt wurden.
  */
 class Board(val rows: Int, val cols: Int, private val cells: List<Tile?>) {
 
@@ -22,22 +29,31 @@ class Board(val rows: Int, val cols: Int, private val cells: List<Tile?>) {
 
     operator fun get(row: Int, col: Int): Tile? = cells[row * cols + col]
 
+    operator fun get(pos: Pos): Tile? = this[pos.row, pos.col]
+
     fun isInside(row: Int, col: Int): Boolean = row in 0 until rows && col in 0 until cols
 
+    fun isInside(pos: Pos): Boolean = isInside(pos.row, pos.col)
+
     /** Liefert true, wenn irgendwo 3 (oder mehr) gleiche Steine in einer Reihe/Spalte liegen. */
-    fun hasAnyMatch(): Boolean {
-        for (row in 0 until rows) {
-            for (col in 0 until cols) {
-                val kind = this[row, col]?.kind ?: continue
-                val horizontal = col + 2 < cols &&
-                    this[row, col + 1]?.kind == kind && this[row, col + 2]?.kind == kind
-                val vertical = row + 2 < rows &&
-                    this[row + 1, col]?.kind == kind && this[row + 2, col]?.kind == kind
-                if (horizontal || vertical) return true
-            }
-        }
-        return false
+    fun hasAnyMatch(): Boolean = MatchFinder.find(this).isNotEmpty()
+
+    /** Neues Board, bei dem die Steine an [a] und [b] vertauscht sind. */
+    fun swap(a: Pos, b: Pos): Board {
+        val newCells = cells.toMutableList()
+        newCells[index(a)] = cells[index(b)]
+        newCells[index(b)] = cells[index(a)]
+        return Board(rows, cols, newCells)
     }
+
+    /** Neues Board, bei dem alle Steine an den [positions] entfernt (leer) sind. */
+    fun removeAll(positions: Collection<Pos>): Board {
+        val newCells = cells.toMutableList()
+        for (pos in positions) newCells[index(pos)] = null
+        return Board(rows, cols, newCells)
+    }
+
+    private fun index(pos: Pos): Int = pos.row * cols + pos.col
 }
 
 /** Erzeugt fortlaufende, eindeutige Stein-Nummern. */
