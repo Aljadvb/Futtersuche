@@ -68,6 +68,8 @@ data class LevelState(
     val score: Int = 0,
     /** Stein-ID des Futters, das der Futterdieb nach dem nächsten Zug klauen will (null = keins). */
     val thiefTargetId: Long? = null,
+    /** true, wenn ein neues Hindernis fällig war, aber verschoben wurde (max. ein Schaden pro Zug). */
+    val obstacleDue: Boolean = false,
 ) {
     /** Wie viele Züge schon gemacht wurden. */
     val movesMade: Int get() = config.moves - movesLeft

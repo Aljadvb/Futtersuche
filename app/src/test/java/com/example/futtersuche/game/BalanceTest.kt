@@ -16,7 +16,7 @@ import kotlin.random.Random
 class BalanceTest {
 
     private val levels = 1..40
-    private val runsPerLevel = 30
+    private val runsPerLevel = 60
 
     /** So oft muss der Computer-Spieler mindestens gewinnen. */
     private val minWinRate = 0.5

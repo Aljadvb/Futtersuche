@@ -53,6 +53,10 @@ object OpponentAI {
         }
         val moveNumber = state.movesMade
         val events = mutableListOf<OpponentEvent>()
+        // Pro Zug richtet der Widersacher höchstens EINEN Schaden an (klauen, graben,
+        // Eindringling-Schaden). Alles Weitere wartet bis zum nächsten Zug.
+        var harmed = false
+        var obstacleDue = state.obstacleDue
         var board = state.board
         val collected = state.collected.toMutableMap()
         var thiefTarget = state.thiefTargetId
@@ -66,6 +70,7 @@ object OpponentAI {
                 val kind = board[pos]!!.kind
                 val inStock = collected[kind] ?: 0
                 val isGoal = state.config.goals.any { it.kind == kind }
+                harmed = true
                 if (isGoal && inStock > 0) {
                     val amount = minOf(Difficulty.THIEF_STEALS, inStock)
                     collected[kind] = inStock - amount
@@ -94,7 +99,10 @@ object OpponentAI {
         if (intruder != null) {
             if (intruder.patience > 1) {
                 board = board.withBlockers(intruder = intruder.copy(patience = intruder.patience - 1))
+            } else if (harmed) {
+                // Schon Schaden in diesem Zug → er wartet noch einen Zug (bleibt auf 1)
             } else {
+                harmed = true
                 board = board.withBlockers(intruder = null) // er geht wieder – aber nicht ohne Schaden
                 val stealable = state.config.goals.filter { (collected[it.kind] ?: 0) > 0 }
                 if (stealable.isNotEmpty() && (random.nextBoolean() || freeTiles(board, thiefTarget).isEmpty())) {
@@ -117,11 +125,13 @@ object OpponentAI {
             }
         }
 
-        // 3. Blockade: ab und zu ein neues Hindernis
-        if (config.obstacleInterval > 0 && moveNumber % config.obstacleInterval == 0) {
+        // 3. Blockade: ab und zu ein neues Hindernis (wird verschoben, falls schon Schaden war)
+        if (config.obstacleInterval > 0 && moveNumber % config.obstacleInterval == 0) obstacleDue = true
+        if (obstacleDue && !harmed) {
             val placed = placeObstacles(board, 1, thiefTarget, random)
             if (placed.obstacles.size > board.obstacles.size) events += OpponentEvent.ObstaclePlaced
             board = placed
+            obstacleDue = false
         }
 
         // 4. Lücken auffüllen; entstehen dabei zufällig Treffer, zählen sie für den Spieler
@@ -140,6 +150,7 @@ object OpponentAI {
             collected = collected,
             score = state.score + Scoring.pointsFor(steps),
             thiefTargetId = thiefTarget,
+            obstacleDue = obstacleDue,
         )
         return OpponentTurn(newState, events, afterActions, steps, reshuffled)
     }

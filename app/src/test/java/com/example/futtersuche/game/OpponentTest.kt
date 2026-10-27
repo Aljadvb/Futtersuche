@@ -180,4 +180,53 @@ class OpponentTest {
         val start = LevelState.start(LevelGenerator.generate(5, "x"), random)
         assertEquals(Difficulty.START_OBSTACLES, start.board.obstacles.size)
     }
+
+    private fun isHarm(event: OpponentEvent): Boolean = event is OpponentEvent.ThiefStole ||
+        event is OpponentEvent.ThiefDug || event is OpponentEvent.ObstaclePlaced ||
+        event is OpponentEvent.IntruderStole || event is OpponentEvent.IntruderBlocked
+
+    @Test
+    fun hoechstensEinSchadenProZug() {
+        var harmfulTurns = 0
+        var postponed = 0
+        for (level in 1..40) {
+            val config = LevelGenerator.generate(level, "garten")
+            repeat(3) { run ->
+                val random = Random(level * 100 + run)
+                var state = LevelState.start(config, random)
+                while (state.status == LevelStatus.PLAYING) {
+                    val (a, b) = MoveFinder.findMove(state.board)!!
+                    state = state.afterMove(GameRules.trySwap(state.board, a, b, config.kindCount, random) as SwapResult.Success)
+                    val turn = OpponentAI.act(state, random)
+                    val harms = turn.events.count(::isHarm)
+                    assertTrue("Level $level: mehrere Schäden in einem Zug: ${turn.events}", harms <= 1)
+                    if (harms == 1) harmfulTurns++
+                    if (turn.state.obstacleDue) postponed++
+                    state = turn.state
+                }
+            }
+        }
+        assertTrue(harmfulTurns > 50) // der Widersacher war wirklich aktiv
+        assertTrue(postponed > 0)     // und es wurde tatsächlich etwas verschoben
+    }
+
+    @Test
+    fun verschobenesHindernisKommtImNaechstenZug() {
+        val board = BoardGenerator.create(random = Random(1))
+        val target = board[Pos(4, 4)]!!
+        // Zug 7: Dieb schnappt zu UND ein Hindernis wäre fällig
+        val state = stateOf(
+            board, OpponentConfig(obstacleInterval = 7, thiefInterval = 6),
+            goals = listOf(Goal(target.kind, 20)), collected = mapOf(target.kind to 5),
+            movesMade = 7, thiefTargetId = target.id,
+        )
+        val turn7 = OpponentAI.act(state, random)
+        assertTrue(turn7.events.any { it is OpponentEvent.ThiefStole })
+        assertFalse(OpponentEvent.ObstaclePlaced in turn7.events)
+        assertTrue(turn7.state.obstacleDue)
+
+        val turn8 = OpponentAI.act(turn7.state.copy(movesLeft = turn7.state.movesLeft - 1), random)
+        assertTrue(OpponentEvent.ObstaclePlaced in turn8.events)
+        assertFalse(turn8.state.obstacleDue)
+    }
 }

@@ -33,6 +33,7 @@ object SaveCodec {
             "obstacles=" + board.obstacles.joinToString(",") { "${it.row}:${it.col}" },
             "intruder=" + (board.intruder?.let { "${it.pos.row}:${it.pos.col}:${it.patience}" } ?: ""),
             "thief=" + (thiefPos?.let { "${it.row}:${it.col}" } ?: ""),
+            "obstacleDue=${state.obstacleDue}",
         ).joinToString("\n")
     }
 
@@ -72,6 +73,7 @@ object SaveCodec {
             collected = collected,
             score = values.getValue("score").toInt(),
             thiefTargetId = thiefId,
+            obstacleDue = values["obstacleDue"] == "true",
         )
     } catch (e: Exception) {
         null
