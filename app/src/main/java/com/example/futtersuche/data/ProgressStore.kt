@@ -35,4 +35,17 @@ class ProgressStore(context: Context) {
     fun markHintSeen(key: String) {
         prefs.edit().putBoolean("hint_$key", true).apply()
     }
+
+    /** Speichert den laufenden Level-Stand (als Text, siehe SaveCodec). */
+    fun saveGame(campaignId: String, text: String) {
+        prefs.edit().putString("game_$campaignId", text).apply()
+    }
+
+    /** Der gespeicherte Level-Stand oder null, wenn keiner da ist. */
+    fun loadGame(campaignId: String): String? = prefs.getString("game_$campaignId", null)
+
+    /** Löscht den gespeicherten Level-Stand (z. B. wenn das Level vorbei ist). */
+    fun clearGame(campaignId: String) {
+        prefs.edit().remove("game_$campaignId").apply()
+    }
 }

@@ -13,6 +13,7 @@ import com.example.futtersuche.game.LevelState
 import com.example.futtersuche.game.LevelStatus
 import com.example.futtersuche.game.OpponentAI
 import com.example.futtersuche.game.Pos
+import com.example.futtersuche.game.SaveCodec
 import com.example.futtersuche.game.SwapResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
@@ -43,7 +44,7 @@ class GameController(
     private val store: ProgressStore,
     private val scope: CoroutineScope,
 ) {
-    var state by mutableStateOf(newLevel(store.currentLevel(campaign.id)))
+    var state by mutableStateOf(loadOrStartLevel())
         private set
 
     /** Feld während eines Zuges (Zwischenschritte der Animation), sonst null. */
@@ -95,6 +96,7 @@ class GameController(
         highlighted = emptySet()
         animationBoard = null
         state = newLevel(number)
+        saveProgress(state)
         pendingHints = hintsFor(state)
     }
 
@@ -103,6 +105,22 @@ class GameController(
         level.config.opponent.behaviors().filter { !store.hintSeen(it.key) }
 
     private fun newLevel(number: Int): LevelState = LevelState.start(LevelGenerator.generate(number, campaign.id))
+
+    /** Setzt ein gespeichertes, noch laufendes Level fort – sonst beginnt das aktuelle Level neu. */
+    private fun loadOrStartLevel(): LevelState {
+        val saved = store.loadGame(campaign.id)?.let { SaveCodec.decode(it, campaign.id) }
+        if (saved != null && saved.status == LevelStatus.PLAYING) return saved
+        return newLevel(store.currentLevel(campaign.id)).also(::saveProgress)
+    }
+
+    /** Sichert den Stand, solange das Level läuft; danach wird der Spielstand gelöscht. */
+    private fun saveProgress(level: LevelState) {
+        if (level.status == LevelStatus.PLAYING) {
+            store.saveGame(campaign.id, SaveCodec.encode(level))
+        } else {
+            store.clearGame(campaign.id)
+        }
+    }
 
     private suspend fun playNoMatch(result: SwapResult.NoMatch) {
         busy = true
@@ -130,6 +148,7 @@ class GameController(
 
         // Jetzt ist der Widersacher dran (nur solange das Level noch läuft)
         if (state.status == LevelStatus.PLAYING) playOpponent()
+        saveProgress(state)
 
         busy = false
         if (state.status != LevelStatus.PLAYING) finishLevel()
