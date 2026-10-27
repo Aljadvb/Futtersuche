@@ -51,8 +51,9 @@ fun GameScreen(campaign: Campaign, store: ProgressStore, modifier: Modifier = Mo
 
         BoardView(
             board = controller.shownBoard,
-            foods = campaign.foods,
+            campaign = campaign,
             highlighted = controller.highlighted,
+            markedTileId = controller.state.thiefTargetId,
             onSwipe = controller::onSwipe,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -63,6 +64,15 @@ fun GameScreen(campaign: Campaign, store: ProgressStore, modifier: Modifier = Mo
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.Center,
+        )
+    }
+
+    controller.hint?.let { behavior ->
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text(hintTitle(campaign, behavior)) },
+            text = { Text(hintText(campaign, behavior)) },
+            confirmButton = { TextButton(onClick = controller::dismissHint) { Text("Verstanden!") } },
         )
     }
 

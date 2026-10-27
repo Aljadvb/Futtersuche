@@ -20,6 +20,10 @@ data class CascadeStep(
     val created: Map<Pos, Tile>,
     /** Gesammeltes Futter: Sorte → Anzahl. */
     val collected: Map<Int, Int>,
+    /** Hindernisse, die durch Treffer direkt daneben entfernt wurden. */
+    val obstaclesRemoved: Set<Pos>,
+    /** true, wenn der Eindringling durch einen Treffer direkt neben ihm vertrieben wurde. */
+    val intruderChased: Boolean,
     /** Feld nach dem Entfernen (mit Lücken). */
     val afterRemoval: Board,
     /** Feld nach dem Nachrutschen und Auffüllen. */
@@ -60,10 +64,22 @@ object Cascade {
             val removed = SpecialEffects.expand(current, hit) - created.keys
 
             val collected = removed.mapNotNull { current[it]?.kind }.groupingBy { it }.eachCount()
-            val afterRemoval = current.removeAll(removed).withTiles(created)
+
+            // Alles, was direkt neben einem entfernten Stein liegt, bekommt den Treffer ab
+            val nextToHit = (removed + created.keys).flatMap { it.neighbors() }.toSet()
+            val obstaclesRemoved = current.obstacles.filter { it in nextToHit }.toSet()
+            val intruderChased = current.intruder?.pos in nextToHit
+
+            val afterRemoval = current.removeAll(removed).withTiles(created).withBlockers(
+                obstacles = current.obstacles - obstaclesRemoved,
+                intruder = if (intruderChased) null else current.intruder,
+            )
             val afterFall = Gravity.apply(afterRemoval, kindCount, random)
 
-            steps += CascadeStep(chain, current, matches, removed, created, collected, afterRemoval, afterFall)
+            steps += CascadeStep(
+                chain, current, matches, removed, created, collected,
+                obstaclesRemoved, intruderChased, afterRemoval, afterFall,
+            )
             current = afterFall
             forced = emptySet()
             preferred = emptySet()
@@ -130,15 +146,19 @@ object Gravity {
     /**
      * Lässt in jeder Spalte die Steine nach unten in die Lücken rutschen
      * und füllt oben mit neuen, zufälligen Steinen auf.
+     * Blockierte Felder (Hindernis, Eindringling) werden übersprungen –
+     * die Steine rutschen an ihnen vorbei.
      */
     fun apply(board: Board, kindCount: Int, random: Random): Board {
         val changes = mutableMapOf<Pos, Tile?>()
         for (col in 0 until board.cols) {
-            // Steine dieser Spalte von unten nach oben einsammeln
-            val tiles = (board.rows - 1 downTo 0).mapNotNull { row -> board[row, col] }
+            // Freie Felder dieser Spalte, von unten nach oben
+            val free = (board.rows - 1 downTo 0).map { Pos(it, col) }.filter { !board.isBlocked(it) }
+            // Steine dieser Spalte von unten nach oben einsammeln …
+            val tiles = free.mapNotNull { board[it] }
             // … und von unten her wieder hineinlegen, oben neue Steine ergänzen
-            for ((i, row) in (board.rows - 1 downTo 0).withIndex()) {
-                changes[Pos(row, col)] = tiles.getOrNull(i) ?: Tile.random(kindCount, random)
+            for ((i, pos) in free.withIndex()) {
+                changes[pos] = tiles.getOrNull(i) ?: Tile.random(kindCount, random)
             }
         }
         return board.withTiles(changes)

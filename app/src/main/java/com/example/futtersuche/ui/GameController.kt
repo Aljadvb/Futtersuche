@@ -6,10 +6,12 @@ import androidx.compose.runtime.setValue
 import com.example.futtersuche.data.Campaign
 import com.example.futtersuche.data.ProgressStore
 import com.example.futtersuche.game.Board
+import com.example.futtersuche.game.CascadeStep
 import com.example.futtersuche.game.GameRules
 import com.example.futtersuche.game.LevelGenerator
 import com.example.futtersuche.game.LevelState
 import com.example.futtersuche.game.LevelStatus
+import com.example.futtersuche.game.OpponentAI
 import com.example.futtersuche.game.Pos
 import com.example.futtersuche.game.SwapResult
 import kotlinx.coroutines.CoroutineScope
@@ -22,6 +24,7 @@ private const val SWAP_DELAY_MS = 200L
 private const val HIGHLIGHT_DELAY_MS = 350L
 private const val GAP_DELAY_MS = 150L
 private const val FALL_DELAY_MS = 250L
+private const val OPPONENT_DELAY_MS = 400L
 
 /** Infos für den Dialog am Ende eines Levels. */
 data class LevelEnd(val won: Boolean, val finalScore: Int, val bonus: Int, val best: Int, val newRecord: Boolean)
@@ -53,6 +56,12 @@ class GameController(
     var levelEnd by mutableStateOf<LevelEnd?>(null)
         private set
 
+    /** Erklär-Hinweise, die noch gezeigt werden müssen (der erste wird angezeigt). */
+    private var pendingHints by mutableStateOf(hintsFor(state))
+
+    /** Der Hinweis, der gerade angezeigt werden soll (null = keiner). */
+    val hint: OpponentBehavior? get() = pendingHints.firstOrNull()
+
     /** true, solange ein Zug abgespielt wird – dann wird Wischen ignoriert. */
     private var busy = false
 
@@ -60,12 +69,19 @@ class GameController(
     val shownBoard: Board get() = animationBoard ?: state.board
 
     fun onSwipe(from: Pos, to: Pos) {
-        if (busy || state.status != LevelStatus.PLAYING) return
+        if (busy || hint != null || state.status != LevelStatus.PLAYING) return
         when (val result = GameRules.trySwap(state.board, from, to, state.config.kindCount, Random.Default)) {
             SwapResult.NotAllowed -> Unit
             is SwapResult.NoMatch -> scope.launch { playNoMatch(result) }
             is SwapResult.Success -> scope.launch { playSuccess(result) }
         }
+    }
+
+    /** Hinweis wurde gelesen → merken und den nächsten zeigen. */
+    fun dismissHint() {
+        val current = hint ?: return
+        store.markHintSeen(current.key)
+        pendingHints = pendingHints.drop(1)
     }
 
     /** "Nochmal": gleiches Level, gleiche Ziele, neues Feld. */
@@ -79,7 +95,12 @@ class GameController(
         highlighted = emptySet()
         animationBoard = null
         state = newLevel(number)
+        pendingHints = hintsFor(state)
     }
+
+    /** Verhaltensweisen des Widersachers in diesem Level, deren Erklärung noch nie gezeigt wurde. */
+    private fun hintsFor(level: LevelState): List<OpponentBehavior> =
+        level.config.opponent.behaviors().filter { !store.hintSeen(it.key) }
 
     private fun newLevel(number: Int): LevelState = LevelState.start(LevelGenerator.generate(number, campaign.id))
 
@@ -97,8 +118,46 @@ class GameController(
         animationBoard = result.swapped
         delay(SWAP_DELAY_MS)
 
-        // Jeden Durchgang der Kettenreaktion einzeln zeigen
-        for (step in result.steps) {
+        playSteps(result.steps)
+
+        state = state.afterMove(result)
+        animationBoard = null
+        val lines = mutableListOf<String>()
+        if (result.maxChain > 1) lines += "Kettenreaktion x${result.maxChain}!"
+        playerHitsText(campaign, result.steps)?.let { lines += it }
+        if (result.reshuffled) lines += "Kein Zug mehr möglich – neu gemischt!"
+        message = lines.joinToString("\n")
+
+        // Jetzt ist der Widersacher dran (nur solange das Level noch läuft)
+        if (state.status == LevelStatus.PLAYING) playOpponent()
+
+        busy = false
+        if (state.status != LevelStatus.PLAYING) finishLevel()
+    }
+
+    private suspend fun playOpponent() {
+        val turn = OpponentAI.act(state, Random.Default)
+        if (turn.events.isEmpty() && turn.steps.isEmpty() && !turn.reshuffled) {
+            state = turn.state
+            return
+        }
+        delay(OPPONENT_DELAY_MS)
+        val lines = turn.events.map { opponentEventText(campaign, it) }.toMutableList()
+        if (turn.reshuffled) lines += "Kein Zug mehr möglich – neu gemischt!"
+        message = (listOf(message) + lines).filter { it.isNotBlank() }.joinToString("\n")
+
+        animationBoard = turn.afterActions
+        // Die Dieb-Markierung schon jetzt zeigen
+        state = state.copy(thiefTargetId = turn.state.thiefTargetId)
+        delay(FALL_DELAY_MS)
+        playSteps(turn.steps)
+        state = turn.state
+        animationBoard = null
+    }
+
+    /** Spielt die Durchgänge einer Kettenreaktion nacheinander ab. */
+    private suspend fun playSteps(steps: List<CascadeStep>) {
+        for (step in steps) {
             highlighted = step.removed
             delay(HIGHLIGHT_DELAY_MS)
             animationBoard = step.afterRemoval
@@ -107,16 +166,6 @@ class GameController(
             animationBoard = step.afterFall
             delay(FALL_DELAY_MS)
         }
-
-        state = state.afterMove(result)
-        animationBoard = null
-        message = when {
-            result.reshuffled -> "Kein Zug mehr möglich – neu gemischt!"
-            result.maxChain > 1 -> "Kettenreaktion x${result.maxChain}!"
-            else -> ""
-        }
-        busy = false
-        if (state.status != LevelStatus.PLAYING) finishLevel()
     }
 
     private fun finishLevel() {

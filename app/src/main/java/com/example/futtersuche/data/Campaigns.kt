@@ -17,6 +17,20 @@ data class Character(
     val name: String,    // "Hoppel"
     val species: String, // "Hase"
     val emoji: String,
+    val article: String = "", // "der" / "die" – für Sätze wie "Der Fuchs klaut …"; leer bei Eigennamen
+) {
+    /** "der Fuchs" bzw. "Hoppel" */
+    val nameWithArticle: String get() = if (article.isEmpty()) name else "$article $name"
+
+    /** "Der Fuchs" – für den Satzanfang */
+    val nameAtSentenceStart: String get() = nameWithArticle.replaceFirstChar { it.uppercase() }
+}
+
+/** Das Hindernis, das der Widersacher aufs Feld legt. */
+data class Obstacle(
+    val name: String,       // "Fuchsbau"
+    val pluralName: String, // "Fuchsbauten"
+    val emoji: String,
 )
 
 /**
@@ -29,6 +43,7 @@ data class Campaign(
     val title: String,
     val animal: Character,
     val opponent: Character,
+    val obstacle: Obstacle,
     val foods: List<Food>, // mindestens 6 Sorten (ab Level 20 werden 6 benutzt)
     val backgroundLight: Color,
     val backgroundDark: Color,
@@ -40,7 +55,8 @@ object Campaigns {
         id = "garten",
         title = "Hoppels Garten",
         animal = Character("Hoppel", "Hase", "🐰"),
-        opponent = Character("Fuchs", "Fuchs", "🦊"),
+        opponent = Character("Fuchs", "Fuchs", "🦊", article = "der"),
+        obstacle = Obstacle("Fuchsbau", "Fuchsbauten", "🕳️"),
         foods = listOf(
             Food("Karotte", "Karotten", "🥕"),
             Food("Salat", "Salatköpfe", "🥬"),
@@ -57,7 +73,8 @@ object Campaigns {
         id = "dschungel",
         title = "Momos Dschungel",
         animal = Character("Momo", "Affe", "🐒"),
-        opponent = Character("Schlange", "Schlange", "🐍"),
+        opponent = Character("Schlange", "Schlange", "🐍", article = "die"),
+        obstacle = Obstacle("Felsbrocken", "Felsbrocken", "🪨"),
         foods = listOf(
             Food("Banane", "Bananen", "🍌"),
             Food("Mango", "Mangos", "🥭"),

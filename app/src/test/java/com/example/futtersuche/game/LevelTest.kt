@@ -28,7 +28,7 @@ class LevelTest {
         for (level in 1..99) {
             if (Difficulty.goalCount(level) != Difficulty.goalCount(level + 1)) continue
             val diff = Difficulty.amountPerGoal(level + 1) - Difficulty.amountPerGoal(level)
-            assertTrue("Menge springt bei Level $level", diff in -2..1)
+            assertTrue("Menge springt bei Level $level", diff in -1..1)
         }
     }
 

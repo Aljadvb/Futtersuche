@@ -6,8 +6,9 @@ import kotlin.random.Random
 
 /**
  * Prüft, ob die Level schaffbar sind: Ein einfacher Computer-Spieler spielt jedes Level
- * mehrmals durch. Er wählt immer den Zug, der am meisten noch benötigtes Futter bringt,
- * plant aber nicht voraus – er spielt also eher wie ein Anfänger.
+ * mehrmals durch – inklusive Widersacher. Er wählt immer den Zug, der am meisten noch
+ * benötigtes Futter bringt, kümmert sich etwas um den Widersacher, plant aber nicht
+ * voraus – er spielt also eher wie ein Anfänger.
  *
  * Nach Änderungen in Difficulty.kt diesen Test laufen lassen
  * (Rechtsklick auf die Datei → Run 'BalanceTest'). Die Tabelle steht in der Ausgabe.
@@ -54,6 +55,7 @@ class BalanceTest {
             val move = bestMove(state) ?: break
             val result = GameRules.trySwap(state.board, move.first, move.second, config.kindCount, random)
             state = state.afterMove(result as SwapResult.Success)
+            state = OpponentAI.act(state, random).state
         }
         return state
     }
@@ -75,6 +77,11 @@ class BalanceTest {
                     val missing = goal.amount - state.progress(goal)
                     value += minOf(missing, first[goal.kind] ?: 0)
                 }
+                // Widersacher: Eindringling vertreiben, Diebesgut retten, Hindernisse wegräumen
+                val step = result.steps.first()
+                if (step.intruderChased) value += 3.0
+                if (state.thiefTargetId != null && step.removed.any { board[it]?.id == state.thiefTargetId }) value += 1.0
+                value += step.obstaclesRemoved.size * 0.5
                 value += first.values.sum() * 0.01 // bei Gleichstand: mehr Steine sind besser
                 if (value > bestValue) {
                     bestValue = value

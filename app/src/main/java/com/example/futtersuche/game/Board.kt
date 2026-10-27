@@ -39,14 +39,32 @@ data class Tile(val id: Long, val kind: Int, val special: Special = Special.NONE
 data class Pos(val row: Int, val col: Int) {
     /** true, wenn [other] direkt links, rechts, oben oder unten daneben liegt. */
     fun isNeighborOf(other: Pos): Boolean = abs(row - other.row) + abs(col - other.col) == 1
+
+    /** Die vier direkten Nachbarn (können außerhalb des Feldes liegen). */
+    fun neighbors(): List<Pos> = listOf(Pos(row - 1, col), Pos(row + 1, col), Pos(row, col - 1), Pos(row, col + 1))
 }
+
+/**
+ * Der Eindringling des Widersachers: sitzt auf [pos] und richtet nach [patience] Zügen Schaden an.
+ */
+data class Intruder(val pos: Pos, val patience: Int)
 
 /**
  * Das Spielfeld. Es ist unveränderlich: Jede Änderung erzeugt ein neues Board.
  * Das ist für Jetpack Compose praktisch, weil es so Änderungen sicher bemerkt.
+ *
  * Ein Feld kann leer sein (null), z. B. nachdem Steine entfernt wurden.
+ * Blockierte Felder ([obstacles] und das Feld des [intruder]) haben nie einen Stein:
+ * Man kann dort nichts hintauschen, sie unterbrechen Reihen, und nachfallende
+ * Steine rutschen an ihnen vorbei.
  */
-class Board(val rows: Int, val cols: Int, private val cells: List<Tile?>) {
+class Board(
+    val rows: Int,
+    val cols: Int,
+    private val cells: List<Tile?>,
+    val obstacles: Set<Pos> = emptySet(),
+    val intruder: Intruder? = null,
+) {
 
     init {
         require(cells.size == rows * cols) { "Falsche Anzahl an Feldern" }
@@ -60,6 +78,17 @@ class Board(val rows: Int, val cols: Int, private val cells: List<Tile?>) {
 
     fun isInside(pos: Pos): Boolean = isInside(pos.row, pos.col)
 
+    /** true, wenn auf dem Feld ein Hindernis oder der Eindringling sitzt. */
+    fun isBlocked(pos: Pos): Boolean = pos in obstacles || intruder?.pos == pos
+
+    /** Liefert eine Kopie mit geänderten Hindernissen und/oder Eindringling. Blockierte Felder werden geleert. */
+    fun withBlockers(obstacles: Set<Pos> = this.obstacles, intruder: Intruder? = this.intruder): Board {
+        val newCells = cells.toMutableList()
+        for (pos in obstacles) newCells[index(pos)] = null
+        intruder?.let { newCells[index(it.pos)] = null }
+        return Board(rows, cols, newCells, obstacles, intruder)
+    }
+
     /** Liefert true, wenn irgendwo 3 (oder mehr) gleiche Steine in einer Reihe/Spalte liegen. */
     fun hasAnyMatch(): Boolean = MatchFinder.find(this).isNotEmpty()
 
@@ -70,7 +99,7 @@ class Board(val rows: Int, val cols: Int, private val cells: List<Tile?>) {
     fun withTiles(changes: Map<Pos, Tile?>): Board {
         val newCells = cells.toMutableList()
         for ((pos, tile) in changes) newCells[index(pos)] = tile
-        return Board(rows, cols, newCells)
+        return Board(rows, cols, newCells, obstacles, intruder)
     }
 
     /** Neues Board, bei dem die Steine an [a] und [b] vertauscht sind. */
@@ -105,13 +134,20 @@ object BoardGenerator {
         cols: Int = 8,
         kindCount: Int = 5,
         random: Random = Random.Default,
+        obstacles: Set<Pos> = emptySet(),
+        intruder: Intruder? = null,
     ): Board {
         require(kindCount >= 3) { "Es werden mindestens 3 Steinarten benötigt" }
         while (true) {
-            val board = fillWithoutMatches(rows, cols, kindCount, random)
+            // Steine entfernen kann keine neue 3er-Reihe erzeugen – Hindernisse also einfach danach setzen.
+            val board = fillWithoutMatches(rows, cols, kindCount, random).withBlockers(obstacles, intruder)
             if (MoveFinder.hasPossibleMove(board)) return board
         }
     }
+
+    /** Wählt [count] zufällige Felder für Hindernisse (nicht in der obersten Zeile). */
+    fun randomObstacles(count: Int, rows: Int = 8, cols: Int = 8, random: Random): Set<Pos> =
+        (1 until rows).flatMap { row -> (0 until cols).map { Pos(row, it) } }.shuffled(random).take(count).toSet()
 
     private fun fillWithoutMatches(rows: Int, cols: Int, kindCount: Int, random: Random): Board {
         val kinds = IntArray(rows * cols)

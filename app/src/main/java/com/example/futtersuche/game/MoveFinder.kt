@@ -32,6 +32,6 @@ object MoveFinder {
             val shuffled = board.withTiles(filled.zip(tiles.shuffled(random)).toMap())
             if (!shuffled.hasAnyMatch() && hasPossibleMove(shuffled)) return shuffled
         }
-        return BoardGenerator.create(board.rows, board.cols, kindCount, random)
+        return BoardGenerator.create(board.rows, board.cols, kindCount, random, board.obstacles, board.intruder)
     }
 }

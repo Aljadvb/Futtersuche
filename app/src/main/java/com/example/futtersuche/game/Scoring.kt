@@ -24,7 +24,9 @@ object Scoring {
     }
 
     /** Punkte für einen ganzen Zug inklusive aller Kettenreaktionen. */
-    fun pointsFor(result: SwapResult.Success): Int = result.steps.sumOf { step ->
+    fun pointsFor(result: SwapResult.Success): Int = pointsFor(result.steps)
+
+    fun pointsFor(steps: List<CascadeStep>): Int = steps.sumOf { step ->
         val inMatches = step.matches.flatMap { it.cells }.toSet()
         val extraStones = (step.removed - inMatches).size
         val base = step.matches.sumOf { pointsForMatch(it.size) } + extraStones * POINTS_PER_SPECIAL_STONE

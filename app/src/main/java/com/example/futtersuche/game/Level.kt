@@ -6,12 +6,28 @@ import kotlin.random.Random
 /** Ein Sammelziel: [amount] Stück der Futtersorte [kind]. */
 data class Goal(val kind: Int, val amount: Int)
 
+/**
+ * Wie aktiv der Widersacher in einem Level ist.
+ * Intervall = alle wie viele Züge er etwas tut; 0 = Verhalten in diesem Level aus.
+ */
+data class OpponentConfig(
+    val startObstacles: Int = 0,
+    val obstacleInterval: Int = 0,
+    val thiefInterval: Int = 0,
+    val intruderInterval: Int = 0,
+) {
+    val blockade: Boolean get() = startObstacles > 0 || obstacleInterval > 0
+    val thief: Boolean get() = thiefInterval > 0
+    val intruder: Boolean get() = intruderInterval > 0
+}
+
 /** Alles, was ein Level ausmacht. Wird aus der Levelnummer berechnet. */
 data class LevelConfig(
     val number: Int,
     val moves: Int,
     val kindCount: Int,
     val goals: List<Goal>,
+    val opponent: OpponentConfig = OpponentConfig(),
 )
 
 object LevelGenerator {
@@ -31,6 +47,12 @@ object LevelGenerator {
             moves = Difficulty.moves(level),
             kindCount = kindCount,
             goals = goalKinds.map { Goal(it, amount) },
+            opponent = OpponentConfig(
+                startObstacles = Difficulty.startObstacles(level),
+                obstacleInterval = Difficulty.obstacleInterval(level),
+                thiefInterval = Difficulty.thiefInterval(level),
+                intruderInterval = Difficulty.intruderInterval(level),
+            ),
         )
     }
 }
@@ -44,7 +66,12 @@ data class LevelState(
     val movesLeft: Int,
     val collected: Map<Int, Int> = emptyMap(),
     val score: Int = 0,
+    /** Stein-ID des Futters, das der Futterdieb nach dem nächsten Zug klauen will (null = keins). */
+    val thiefTargetId: Long? = null,
 ) {
+    /** Wie viele Züge schon gemacht wurden. */
+    val movesMade: Int get() = config.moves - movesLeft
+
     /** Gesammelte Menge für ein Ziel – höchstens so viel wie verlangt (für die Anzeige "7/12"). */
     fun progress(goal: Goal): Int = min(collected[goal.kind] ?: 0, goal.amount)
 
@@ -77,7 +104,11 @@ data class LevelState(
     companion object {
         fun start(config: LevelConfig, random: Random = Random.Default): LevelState = LevelState(
             config = config,
-            board = BoardGenerator.create(kindCount = config.kindCount, random = random),
+            board = BoardGenerator.create(
+                kindCount = config.kindCount,
+                random = random,
+                obstacles = BoardGenerator.randomObstacles(config.opponent.startObstacles, random = random),
+            ),
             movesLeft = config.moves,
         )
     }

@@ -28,4 +28,11 @@ class ProgressStore(context: Context) {
         prefs.edit().putInt("best_${campaignId}_$level", score).apply()
         return true
     }
+
+    /** Wurde der Hinweis mit diesem Schlüssel schon einmal gezeigt? */
+    fun hintSeen(key: String): Boolean = prefs.getBoolean("hint_$key", false)
+
+    fun markHintSeen(key: String) {
+        prefs.edit().putBoolean("hint_$key", true).apply()
+    }
 }

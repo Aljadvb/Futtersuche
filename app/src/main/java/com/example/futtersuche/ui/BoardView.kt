@@ -28,6 +28,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.example.futtersuche.data.Campaign
 import com.example.futtersuche.data.Food
 import com.example.futtersuche.game.Board
 import com.example.futtersuche.game.Pos
@@ -38,19 +39,22 @@ import kotlin.math.abs
 /**
  * Zeichnet das Spielfeld als Schachbrett mit einem Futter-Stein pro Feld.
  * [highlighted] = Felder, die gerade aufleuchten sollen (z. B. ein Treffer kurz vor dem Verschwinden).
+ * [markedTileId] = Stein, den der Futterdieb klauen will (wird rot markiert).
  * [onSwipe] wird aufgerufen, wenn der Spieler einen Stein auf ein Nachbarfeld wischt.
  */
 @Composable
 fun BoardView(
     board: Board,
-    foods: List<Food>,
+    campaign: Campaign,
     modifier: Modifier = Modifier,
     highlighted: Set<Pos> = emptySet(),
+    markedTileId: Long? = null,
     onSwipe: (from: Pos, to: Pos) -> Unit = { _, _ -> },
 ) {
     val lightCell = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f)
     val darkCell = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
     val highlightCell = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.6f)
+    val markedCell = MaterialTheme.colorScheme.error.copy(alpha = 0.45f)
 
     // Die Wisch-Erkennung läuft dauerhaft; mit rememberUpdatedState sieht sie trotzdem
     // immer das aktuelle Feld und die aktuelle onSwipe-Funktion.
@@ -105,9 +109,13 @@ fun BoardView(
             for (row in 0 until board.rows) {
                 Row(Modifier.fillMaxWidth().weight(1f)) {
                     for (col in 0 until board.cols) {
-                        val tile = board[row, col]
+                        val pos = Pos(row, col)
+                        val tile = board[pos]
+                        val intruder = board.intruder?.takeIf { it.pos == pos }
+                        val marked = tile != null && tile.id == markedTileId
                         val background = when {
-                            Pos(row, col) in highlighted -> highlightCell
+                            pos in highlighted -> highlightCell
+                            marked || intruder != null -> markedCell
                             (row + col) % 2 == 0 -> lightCell
                             else -> darkCell
                         }
@@ -118,8 +126,20 @@ fun BoardView(
                                 .background(background),
                             contentAlignment = Alignment.Center,
                         ) {
-                            if (tile != null) {
-                                TileImage(tile = tile, food = foods[tile.kind], size = cellSize * 0.75f)
+                            val size = cellSize * 0.75f
+                            when {
+                                pos in board.obstacles -> EmojiImage(campaign.obstacle.emoji, size)
+                                intruder != null -> EmojiImage(
+                                    emoji = campaign.opponent.emoji,
+                                    size = size,
+                                    badge = intruder.patience.toString(),
+                                )
+                                tile != null -> TileImage(
+                                    tile = tile,
+                                    food = campaign.foods[tile.kind],
+                                    size = size,
+                                    markedBy = if (marked) campaign.opponent.emoji else null,
+                                )
                             }
                         }
                     }
@@ -130,39 +150,57 @@ fun BoardView(
 }
 
 /**
- * Zeigt EINEN Stein an. Das ist die einzige Stelle, an der Emojis gezeichnet werden –
- * wenn du später eigene Bilder hast, tauschst du nur diese Funktion aus
- * (z. B. gegen Image(painterResource(food.imageRes), ...)).
- * Spezialsteine bekommen unten rechts ein kleines Abzeichen.
+ * Zeigt EINEN Futter-Stein an. Spezialsteine bekommen unten rechts ein Abzeichen,
+ * vom Futterdieb markierte Steine oben links das Widersacher-Emoji.
  */
 @Composable
-fun TileImage(tile: Tile, food: Food, size: Dp, modifier: Modifier = Modifier) {
-    val density = LocalDensity.current
-    val fontSize = with(density) { (size * 0.8f).toSp() }
-    val badgeSize = with(density) { (size * 0.4f).toSp() }
+fun TileImage(tile: Tile, food: Food, size: Dp, modifier: Modifier = Modifier, markedBy: String? = null) {
     val badge = when (tile.special) {
         Special.NONE -> null
         Special.LINE_H -> "↔"
         Special.LINE_V -> "↕"
         Special.COLOR_BOMB -> "🌈"
     }
+    EmojiImage(emoji = food.emoji, size = size, modifier = modifier, badge = badge, topBadge = markedBy)
+}
+
+/**
+ * Zeichnet ein Emoji mit optionalen Abzeichen. Das ist die einzige Stelle, an der Emojis
+ * auf dem Spielfeld gezeichnet werden – wenn du später eigene Bilder hast, tauschst du nur
+ * diese Funktion aus (z. B. gegen Image(painterResource(...), ...)).
+ */
+@Composable
+fun EmojiImage(
+    emoji: String,
+    size: Dp,
+    modifier: Modifier = Modifier,
+    badge: String? = null,
+    topBadge: String? = null,
+) {
+    val density = LocalDensity.current
+    val fontSize = with(density) { (size * 0.8f).toSp() }
+    val badgeSize = with(density) { (size * 0.4f).toSp() }
+    val badgeStyle = TextStyle(fontSize = badgeSize, lineHeight = badgeSize, fontWeight = FontWeight.Bold)
+    val badgeModifier = Modifier
+        .clip(CircleShape)
+        .background(MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.8f))
 
     Box(modifier.size(size)) {
         Text(
-            text = food.emoji,
+            text = emoji,
             modifier = Modifier.align(Alignment.Center),
             style = TextStyle(fontSize = fontSize, lineHeight = fontSize),
         )
         if (badge != null) {
             Text(
                 text = badge,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.8f)),
+                modifier = Modifier.align(Alignment.BottomEnd).then(badgeModifier),
                 color = MaterialTheme.colorScheme.inverseOnSurface,
-                style = TextStyle(fontSize = badgeSize, lineHeight = badgeSize, fontWeight = FontWeight.Bold),
+                style = badgeStyle,
             )
+        }
+        if (topBadge != null) {
+            Text(text = topBadge, modifier = Modifier.align(Alignment.TopStart), style = badgeStyle)
         }
     }
 }
