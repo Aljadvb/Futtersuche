@@ -24,19 +24,21 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.futtersuche.data.Campaign
 import com.example.futtersuche.data.Food
-import com.example.futtersuche.game.Board
 import com.example.futtersuche.game.BoardGenerator
 import com.example.futtersuche.game.GameRules
 import com.example.futtersuche.game.Pos
 import com.example.futtersuche.game.SwapResult
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.random.Random
 
 /** Wartezeiten in Millisekunden. In Schritt 7 werden daraus echte Animationen. */
 private const val SWAP_DELAY_MS = 200L
 private const val HIGHLIGHT_DELAY_MS = 350L
+private const val GAP_DELAY_MS = 150L
+private const val FALL_DELAY_MS = 250L
 
-/** Der Spielbildschirm: Spielfeld, Wischen, Treffer erkennen und entfernen. */
+/** Der Spielbildschirm: Spielfeld, Wischen, Treffer, Nachrutschen und Kettenreaktionen. */
 @Composable
 fun GameScreen(campaign: Campaign, modifier: Modifier = Modifier) {
     val kindCount = 5 // ab Schritt 4 kommt dieser Wert aus der Level-Generierung
@@ -50,7 +52,7 @@ fun GameScreen(campaign: Campaign, modifier: Modifier = Modifier) {
 
     fun onSwipe(from: Pos, to: Pos) {
         if (busy) return
-        when (val result = GameRules.trySwap(board, from, to)) {
+        when (val result = GameRules.trySwap(board, from, to, kindCount, Random.Default)) {
             SwapResult.NotAllowed -> Unit
 
             is SwapResult.NoMatch -> scope.launch {
@@ -67,11 +69,24 @@ fun GameScreen(campaign: Campaign, modifier: Modifier = Modifier) {
                 busy = true
                 board = result.swapped
                 delay(SWAP_DELAY_MS)
-                highlighted = result.removed // Treffer aufleuchten lassen
-                delay(HIGHLIGHT_DELAY_MS)
-                message = describeCollected(result.swapped, result.removed, campaign.foods)
-                board = result.cleared
-                highlighted = emptySet()
+
+                // Jeden Durchgang der Kettenreaktion einzeln zeigen
+                for (step in result.steps) {
+                    highlighted = step.removed // Treffer aufleuchten lassen
+                    delay(HIGHLIGHT_DELAY_MS)
+                    board = step.afterRemoval  // Lücken (und neue Spezialsteine) zeigen
+                    highlighted = emptySet()
+                    delay(GAP_DELAY_MS)
+                    board = step.afterFall     // nachgerutscht und aufgefüllt
+                    delay(FALL_DELAY_MS)
+                }
+
+                message = describeCollected(result.collected, campaign.foods)
+                if (result.maxChain > 1) message += "\nKettenreaktion x${result.maxChain}!"
+                if (result.reshuffled) {
+                    message += "\nKein Zug mehr möglich – neu gemischt!"
+                    board = result.final
+                }
                 busy = false
             }
         }
@@ -123,8 +138,7 @@ fun GameScreen(campaign: Campaign, modifier: Modifier = Modifier) {
 }
 
 /** Baut einen Text wie "Gesammelt: 3 Karotten, 1 Apfel". */
-private fun describeCollected(board: Board, removed: Set<Pos>, foods: List<Food>): String {
-    val countPerKind = removed.mapNotNull { board[it]?.kind }.groupingBy { it }.eachCount()
+private fun describeCollected(countPerKind: Map<Int, Int>, foods: List<Food>): String {
     val parts = countPerKind.map { (kind, count) ->
         val food = foods[kind]
         "$count ${if (count == 1) food.name else food.pluralName}"

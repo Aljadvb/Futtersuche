@@ -3,16 +3,11 @@ package com.example.futtersuche.game
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.random.Random
 
 class MatchTest {
 
-    /** Baut ein Board aus Text: jede Ziffer ist eine Sorte, "." ist ein leeres Feld. */
-    private fun boardOf(vararg lines: String): Board {
-        val cells = lines.flatMap { line ->
-            line.map { c -> if (c == '.') null else Tile(TileIds.next(), c.digitToInt()) }
-        }
-        return Board(lines.size, lines[0].length, cells)
-    }
+    private val random = Random(1)
 
     @Test
     fun findetWaagerechteUndSenkrechteReihen() {
@@ -42,14 +37,14 @@ class MatchTest {
             "120",
             "201",
         )
-        assertTrue(GameRules.trySwap(board, Pos(0, 0), Pos(0, 1)) is SwapResult.NoMatch)
+        assertTrue(GameRules.trySwap(board, Pos(0, 0), Pos(0, 1), 5, random) is SwapResult.NoMatch)
     }
 
     @Test
     fun nichtBenachbarteFelderSindNichtErlaubt() {
         val board = boardOf("0120", "1201")
-        assertEquals(SwapResult.NotAllowed, GameRules.trySwap(board, Pos(0, 0), Pos(1, 1)))
-        assertEquals(SwapResult.NotAllowed, GameRules.trySwap(board, Pos(0, 0), Pos(0, 2)))
+        assertEquals(SwapResult.NotAllowed, GameRules.trySwap(board, Pos(0, 0), Pos(1, 1), 5, random))
+        assertEquals(SwapResult.NotAllowed, GameRules.trySwap(board, Pos(0, 0), Pos(0, 2), 5, random))
     }
 
     @Test
@@ -59,12 +54,14 @@ class MatchTest {
             "1201",
         )
         // Rechte 0 oben mit der 1 links daneben tauschen → oben "0001"
-        val result = GameRules.trySwap(board, Pos(0, 2), Pos(0, 3))
+        val result = GameRules.trySwap(board, Pos(0, 2), Pos(0, 3), 5, random)
         assertTrue(result is SwapResult.Success)
         result as SwapResult.Success
-        assertEquals(setOf(Pos(0, 0), Pos(0, 1), Pos(0, 2)), result.removed)
-        assertEquals(null, result.cleared[0, 0])
-        assertEquals(1, result.cleared[0, 3]?.kind)
+        val first = result.steps.first()
+        assertEquals(setOf(Pos(0, 0), Pos(0, 1), Pos(0, 2)), first.removed)
+        assertEquals(null, first.afterRemoval[0, 0])
+        assertEquals(1, first.afterRemoval[0, 3]?.kind)
+        assertEquals(mapOf(0 to 3), first.collected)
     }
 
     @Test
