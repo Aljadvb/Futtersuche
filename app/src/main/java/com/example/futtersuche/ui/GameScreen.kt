@@ -4,8 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,63 +16,113 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.futtersuche.data.Campaign
 import com.example.futtersuche.data.ProgressStore
+import com.example.futtersuche.sound.SoundPlayer
 
 /** Der Spielbildschirm. Die ganze Spiel-Logik steckt im [GameController], hier wird nur angezeigt. */
 @Composable
-fun GameScreen(campaign: Campaign, store: ProgressStore, onBack: () -> Unit, modifier: Modifier = Modifier) {
+fun GameScreen(
+    campaign: Campaign,
+    store: ProgressStore,
+    sound: SoundPlayer,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val scope = rememberCoroutineScope()
-    val controller = remember(campaign) { GameController(campaign, store, scope) }
+    val controller = remember(campaign) { GameController(campaign, store, scope, sound) }
+    var showSettings by remember { mutableStateOf(false) }
+
+    // Positionen für das fliegende Futter (alles relativ zu diesem Bildschirm)
+    var screenOrigin by remember { mutableStateOf(Offset.Zero) }
+    var boardRect by remember { mutableStateOf<Rect?>(null) }
+    var animalCenter by remember { mutableStateOf<Offset?>(null) }
 
     val background = if (isSystemInDarkTheme()) campaign.backgroundDark else campaign.backgroundLight
+    val gradient = Brush.verticalGradient(listOf(background, MaterialTheme.colorScheme.background))
 
-    Box(modifier.fillMaxSize().background(background)) {
-    Column(
-        modifier = Modifier
+    Box(
+        modifier
             .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+            .background(gradient)
+            .onGloballyPositioned { screenOrigin = it.positionInRoot() }
     ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onBack) { Text("← Kampagnen") }
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = onBack) { Text("← Kampagnen") }
+                Text(
+                    text = campaign.title,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    textAlign = TextAlign.End,
+                )
+                TextButton(onClick = { showSettings = true }) { Text("⚙️") }
+            }
+            Spacer(Modifier.height(8.dp))
+
+            GameHud(
+                campaign = campaign,
+                state = controller.state,
+                animalMood = controller.animalMood,
+                animalReaction = controller.animalReaction,
+                opponentMood = controller.opponentMood,
+                opponentReaction = controller.opponentReaction,
+                onAnimalPositioned = { animalCenter = it - screenOrigin },
+            )
+            Spacer(Modifier.height(16.dp))
+
+            BoardView(
+                board = controller.shownBoard,
+                campaign = campaign,
+                highlighted = controller.highlighted,
+                markedTileId = controller.state.thiefTargetId,
+                onSwipe = controller::onSwipe,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("board")
+                    .onGloballyPositioned { boardRect = it.boundsInRoot().translate(-screenOrigin) },
+            )
+
+            Spacer(Modifier.height(16.dp))
             Text(
-                text = campaign.title,
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.titleLarge,
+                text = controller.message,
+                style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface,
-                textAlign = TextAlign.End,
+                textAlign = TextAlign.Center,
             )
         }
-        Spacer(Modifier.height(8.dp))
 
-        GameHud(campaign = campaign, state = controller.state)
-        Spacer(Modifier.height(16.dp))
-
-        BoardView(
-            board = controller.shownBoard,
-            campaign = campaign,
-            highlighted = controller.highlighted,
-            markedTileId = controller.state.thiefTargetId,
-            onSwipe = controller::onSwipe,
-            modifier = Modifier.fillMaxWidth(),
+        FlyingFoodLayer(
+            flights = controller.flights,
+            foods = campaign.foods,
+            board = boardRect,
+            boardCols = controller.state.board.cols,
+            animal = animalCenter,
+            onDone = controller::flightDone,
         )
-
-        Spacer(Modifier.height(16.dp))
-        Text(
-            text = controller.message,
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-            textAlign = TextAlign.Center,
-        )
-    }
 
         ToastBanner(
             text = controller.toast,
@@ -80,6 +130,8 @@ fun GameScreen(campaign: Campaign, store: ProgressStore, onBack: () -> Unit, mod
             modifier = Modifier.align(Alignment.TopCenter),
         )
     }
+
+    if (showSettings) SettingsDialog(sound = sound, onDismiss = { showSettings = false })
 
     controller.hint?.let { behavior ->
         AlertDialog(
@@ -105,21 +157,30 @@ private fun LevelEndDialog(campaign: Campaign, end: LevelEnd, onRetry: () -> Uni
     val animal = campaign.animal
     AlertDialog(
         onDismissRequest = {}, // Dialog lässt sich nur über die Knöpfe schließen
+        icon = {
+            AnimalAvatar(
+                emoji = animal.emoji,
+                mood = if (end.won) AnimalMood.FULL else AnimalMood.SAD,
+                reaction = 1,
+                size = MaterialTheme.typography.displayMedium.fontSize,
+            )
+        },
         title = {
-            Text(if (end.won) "${animal.emoji} ${animal.name} ist satt!" else "${animal.emoji} Oh nein!")
+            Text(if (end.won) "${animal.name} ist satt!" else "Oh nein!", textAlign = TextAlign.Center)
         },
         text = {
             Text(
-                if (end.won) {
+                text = if (end.won) {
                     buildString {
-                        append("Geschafft!\n\n")
+                        append("Geschafft! 🎉\n\n")
                         if (end.bonus > 0) append("Bonus für übrige Züge: ${end.bonus}\n")
                         append("Punkte: ${end.finalScore}\n")
                         append(if (end.newRecord) "Neuer Bestwert! 🏆" else "Bestwert: ${end.best}")
                     }
                 } else {
                     "Die Züge sind aufgebraucht. ${animal.name} hat noch Hunger – versuch es nochmal!"
-                }
+                },
+                textAlign = TextAlign.Center,
             )
         },
         confirmButton = {

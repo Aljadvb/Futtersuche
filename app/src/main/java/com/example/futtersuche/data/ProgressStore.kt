@@ -100,4 +100,12 @@ class ProgressStore(context: Context) {
         }
         return new
     }
+
+    // ---------- Einstellungen ----------
+
+    fun soundEnabled(): Boolean = prefs.getBoolean("sound_enabled", true)
+
+    fun setSoundEnabled(on: Boolean) {
+        prefs.edit().putBoolean("sound_enabled", on).apply()
+    }
 }

@@ -18,12 +18,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -31,24 +37,40 @@ import com.example.futtersuche.data.Achievements
 import com.example.futtersuche.data.Campaign
 import com.example.futtersuche.data.Campaigns
 import com.example.futtersuche.data.ProgressStore
+import com.example.futtersuche.sound.SoundPlayer
 
 /** Startbildschirm: Kampagne wählen. Gesperrte Kampagnen sind ausgegraut und zeigen, was sie freischaltet. */
 @Composable
 fun CampaignSelectScreen(
     store: ProgressStore,
+    sound: SoundPlayer,
     onPlay: (Campaign) -> Unit,
     onShowAchievements: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val reached = remember { store.reachedAchievements() }
+    var showSettings by remember { mutableStateOf(false) }
+    if (showSettings) SettingsDialog(sound = sound, onDismiss = { showSettings = false })
 
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                            .compositeOver(MaterialTheme.colorScheme.background),
+                        MaterialTheme.colorScheme.background,
+                    )
+                )
+            )
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(onClick = { showSettings = true }) { Text("⚙️", fontSize = 22.sp) }
+        }
+        Text("🥕 🍎 🍌 🥥", fontSize = 28.sp)
         Text(
             text = "Futtersuche",
             style = MaterialTheme.typography.headlineLarge,

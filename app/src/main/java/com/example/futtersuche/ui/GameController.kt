@@ -16,17 +16,17 @@ import com.example.futtersuche.game.OpponentAI
 import com.example.futtersuche.game.Pos
 import com.example.futtersuche.game.SaveCodec
 import com.example.futtersuche.game.SwapResult
+import com.example.futtersuche.game.OpponentEvent
+import com.example.futtersuche.sound.Sound
+import com.example.futtersuche.sound.SoundPlayer
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.random.Random
 
-/** Wartezeiten in Millisekunden. In Schritt 7 werden daraus echte Animationen. */
-private const val SWAP_DELAY_MS = 200L
-private const val HIGHLIGHT_DELAY_MS = 350L
-private const val GAP_DELAY_MS = 150L
-private const val FALL_DELAY_MS = 250L
-private const val OPPONENT_DELAY_MS = 400L
+/** Höchstens so viele Futterstücke fliegen pro Durchgang gleichzeitig zum Tier. */
+private const val MAX_FLIGHTS_PER_STEP = 12
 
 /** Infos für den Dialog am Ende eines Levels. */
 data class LevelEnd(val won: Boolean, val finalScore: Int, val bonus: Int, val best: Int, val newRecord: Boolean)
@@ -44,6 +44,7 @@ class GameController(
     private val campaign: Campaign,
     private val store: ProgressStore,
     private val scope: CoroutineScope,
+    private val sound: SoundPlayer,
 ) {
     var state by mutableStateOf(loadOrStartLevel())
         private set
@@ -72,6 +73,50 @@ class GameController(
 
     fun dismissToast() {
         pendingToasts = pendingToasts.drop(1)
+    }
+
+    // ---------- Tier, Widersacher und fliegendes Futter ----------
+
+    var animalMood by mutableStateOf(AnimalMood.IDLE)
+        private set
+
+    /** Zählt jede Reaktion hoch, damit die Figur auch bei gleicher Stimmung erneut reagiert. */
+    var animalReaction by mutableStateOf(0)
+        private set
+    var opponentMood by mutableStateOf(OpponentMood.IDLE)
+        private set
+    var opponentReaction by mutableStateOf(0)
+        private set
+    var flights by mutableStateOf(emptyList<Flight>())
+        private set
+
+    private var nextFlightId = 0L
+    private var animalMoodJob: Job? = null
+    private var opponentMoodJob: Job? = null
+
+    fun flightDone(id: Long) {
+        flights = flights.filter { it.id != id }
+    }
+
+    /** Stimmung zeigen; vorübergehende Stimmungen verschwinden nach kurzer Zeit wieder. */
+    private fun showAnimalMood(mood: AnimalMood, permanent: Boolean = false) {
+        animalMoodJob?.cancel()
+        animalMood = mood
+        animalReaction++
+        if (!permanent) animalMoodJob = scope.launch {
+            delay(Timings.MOOD_MS)
+            animalMood = AnimalMood.IDLE
+        }
+    }
+
+    private fun showOpponentMood(mood: OpponentMood) {
+        opponentMoodJob?.cancel()
+        opponentMood = mood
+        opponentReaction++
+        opponentMoodJob = scope.launch {
+            delay(Timings.MOOD_MS)
+            opponentMood = OpponentMood.IDLE
+        }
     }
 
     /** true, solange ein Zug abgespielt wird – dann wird Wischen ignoriert. */
@@ -106,6 +151,9 @@ class GameController(
         message = ""
         highlighted = emptySet()
         animationBoard = null
+        flights = emptyList()
+        animalMoodJob?.cancel()
+        animalMood = AnimalMood.IDLE
         state = newLevel(number)
         saveProgress(state)
         pendingHints = hintsFor(state)
@@ -135,19 +183,24 @@ class GameController(
 
     private suspend fun playNoMatch(result: SwapResult.NoMatch) {
         busy = true
+        sound.play(Sound.SWAP)
         animationBoard = result.swapped // kurz getauscht zeigen …
-        delay(SWAP_DELAY_MS)
+        delay(Timings.SWAP_MS.toLong())
+        sound.play(Sound.INVALID)
         animationBoard = null           // … und zurückspringen (kostet keinen Zug)
+        delay(Timings.SWAP_MS.toLong())
         message = "Kein Treffer – das Futter springt zurück."
         busy = false
     }
 
     private suspend fun playSuccess(result: SwapResult.Success) {
         busy = true
+        sound.play(Sound.SWAP)
         animationBoard = result.swapped
-        delay(SWAP_DELAY_MS)
+        delay(Timings.SWAP_MS.toLong())
 
         playSteps(result.steps)
+        reactToPlayerHits(result.steps)
 
         state = state.afterMove(result)
         recordStats(result.steps)
@@ -166,21 +219,40 @@ class GameController(
         if (state.status != LevelStatus.PLAYING) finishLevel()
     }
 
+    /** Widersacher ärgert sich, wenn der Spieler ihn vertrieben oder Hindernisse entfernt hat. */
+    private fun reactToPlayerHits(steps: List<CascadeStep>) {
+        if (steps.any { it.intruderChased }) sound.play(Sound.CHASED)
+        if (steps.any { it.intruderChased || it.obstaclesRemoved.isNotEmpty() }) showOpponentMood(OpponentMood.ANGRY)
+    }
+
     private suspend fun playOpponent() {
         val turn = OpponentAI.act(state, Random.Default)
         if (turn.events.isEmpty() && turn.steps.isEmpty() && !turn.reshuffled) {
             state = turn.state
             return
         }
-        delay(OPPONENT_DELAY_MS)
+        delay(Timings.OPPONENT_MS.toLong())
         val lines = turn.events.map { opponentEventText(campaign, it) }.toMutableList()
         if (turn.reshuffled) lines += "Kein Zug mehr möglich – neu gemischt!"
         message = (listOf(message) + lines).filter { it.isNotBlank() }.joinToString("\n")
 
+        // Reaktion des Widersachers: Futter gerettet → Ärger, sonst schadenfrohes Grinsen
+        if (turn.events.any { it is OpponentEvent.ThiefFoiled }) {
+            showOpponentMood(OpponentMood.ANGRY)
+            sound.play(Sound.CHASED)
+        } else if (turn.events.isNotEmpty()) {
+            showOpponentMood(OpponentMood.GLOATING)
+            sound.play(Sound.OPPONENT)
+        }
+        val harmed = turn.events.any {
+            it is OpponentEvent.ThiefStole || it is OpponentEvent.IntruderStole || it is OpponentEvent.ThiefDug
+        }
+        if (harmed) showAnimalMood(AnimalMood.SAD)
+
         animationBoard = turn.afterActions
         // Die Dieb-Markierung schon jetzt zeigen
         state = state.copy(thiefTargetId = turn.state.thiefTargetId)
-        delay(FALL_DELAY_MS)
+        delay(Timings.FALL_MS.toLong())
         playSteps(turn.steps)
         state = turn.state
         recordStats(turn.steps)
@@ -200,7 +272,9 @@ class GameController(
 
     private fun announceNewAchievements() {
         val texts = mutableListOf<String>()
-        for (achievement in store.unlockNewAchievements()) {
+        val new = store.unlockNewAchievements()
+        if (new.isNotEmpty()) sound.play(Sound.ACHIEVEMENT)
+        for (achievement in new) {
             texts += "🏆 Erfolg erreicht: ${achievement.emoji} ${achievement.title}"
             for (unlocked in Campaigns.all.filter { it.unlockedBy == achievement.id }) {
                 texts += "🎉 Neue Kampagne freigeschaltet: ${unlocked.animal.emoji} ${unlocked.title}"
@@ -209,22 +283,48 @@ class GameController(
         pendingToasts = pendingToasts + texts
     }
 
-    /** Spielt die Durchgänge einer Kettenreaktion nacheinander ab. */
+    /**
+     * Spielt die Durchgänge einer Kettenreaktion nacheinander ab:
+     * Treffer leuchten auf und schrumpfen weg, Futter fliegt zum Tier, Steine fallen nach.
+     */
     private suspend fun playSteps(steps: List<CascadeStep>) {
         for (step in steps) {
+            val specialFired = step.removed.size > step.matches.flatMap { it.cells }.toSet().size
+            sound.play(if (specialFired || step.created.isNotEmpty()) Sound.SPECIAL else Sound.MATCH, step.chain)
+            showAnimalMood(if (step.chain > 1 || specialFired) AnimalMood.EXCITED else AnimalMood.HAPPY)
+            launchFlights(step)
+
             highlighted = step.removed
-            delay(HIGHLIGHT_DELAY_MS)
+            delay(Timings.VANISH_MS.toLong())
             animationBoard = step.afterRemoval
             highlighted = emptySet()
-            delay(GAP_DELAY_MS)
+            delay(Timings.GAP_MS.toLong())
             animationBoard = step.afterFall
-            delay(FALL_DELAY_MS)
+            delay(Timings.FALL_MS.toLong())
         }
     }
 
-    private fun finishLevel() {
+    /** Gesammeltes Futter fliegt (leicht zeitversetzt) zum Tier. */
+    private fun launchFlights(step: CascadeStep) {
+        val new = step.removed
+            .mapNotNull { pos -> step.before[pos]?.let { pos to it.kind } }
+            .take(MAX_FLIGHTS_PER_STEP)
+            .mapIndexed { i, (pos, kind) -> Flight(nextFlightId++, kind, pos, delayMs = 120 + i * 40) }
+        flights = flights + new
+    }
+
+    private suspend fun finishLevel() {
         val level = state.config.number
         val won = state.status == LevelStatus.WON
+        // Erst das Tier reagieren lassen, dann den Dialog zeigen
+        if (won) {
+            showAnimalMood(AnimalMood.FULL, permanent = true)
+            sound.play(Sound.WIN)
+        } else {
+            showAnimalMood(AnimalMood.SAD, permanent = true)
+            sound.play(Sound.LOSE)
+        }
+        delay(Timings.FLIGHT_MS + 500L)
         var newRecord = false
         if (won) {
             newRecord = store.saveBestScore(campaign.id, level, state.finalScore)

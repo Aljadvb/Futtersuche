@@ -15,6 +15,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.example.futtersuche.data.Campaigns
 import com.example.futtersuche.data.ProgressStore
+import com.example.futtersuche.sound.SoundPlayer
 import com.example.futtersuche.ui.AchievementsScreen
 import com.example.futtersuche.ui.CampaignSelectScreen
 import com.example.futtersuche.ui.GameScreen
@@ -26,10 +27,14 @@ private const val SCREEN_ACHIEVEMENTS = "achievements"
 private const val SCREEN_GAME_PREFIX = "game:"
 
 class MainActivity : ComponentActivity() {
+
+    private lateinit var sound: SoundPlayer
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val store = ProgressStore(applicationContext)
+        sound = SoundPlayer(store)
         // Falls schon vorher Fortschritt da war: Achievements nachträglich prüfen (ohne Einblendung)
         store.unlockNewAchievements()
 
@@ -55,12 +60,14 @@ class MainActivity : ComponentActivity() {
                         screen.startsWith(SCREEN_GAME_PREFIX) && campaign != null -> GameScreen(
                             campaign = campaign,
                             store = store,
+                            sound = sound,
                             onBack = goToSelect,
                             modifier = modifier,
                         )
 
                         else -> CampaignSelectScreen(
                             store = store,
+                            sound = sound,
                             onPlay = { screen = SCREEN_GAME_PREFIX + it.id },
                             onShowAchievements = { screen = SCREEN_ACHIEVEMENTS },
                             modifier = modifier,
@@ -69,5 +76,10 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        sound.release()
     }
 }
