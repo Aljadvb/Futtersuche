@@ -74,6 +74,12 @@ object Difficulty {
     const val THIEF_INTERVAL_START = 6
     const val THIEF_INTERVAL_MIN = 3
 
+    /**
+     * Wird das markierte Futter nicht gerettet, klaut er so viele Stück aus dem
+     * gesammelten Vorrat. Ist von der Sorte noch nichts gesammelt, gräbt er ein Hindernis.
+     */
+    const val THIEF_STEALS = 2
+
     // ---------- Widersacher: Eindringling ----------
     /** Ab diesem Level erscheint der Widersacher selbst auf dem Feld. */
     const val INTRUDER_FROM_LEVEL = 20
@@ -108,7 +114,7 @@ object Difficulty {
      * Pro aktiver Verhaltensweise wird die machbare Menge mit diesem Faktor verringert.
      */
     const val BLOCKADE_FACTOR = 1.0
-    const val THIEF_FACTOR = 1.0
+    const val THIEF_FACTOR = 0.9
     const val INTRUDER_FACTOR = 0.95
 
     // ---------- Berechnungen (normalerweise nicht ändern) ----------

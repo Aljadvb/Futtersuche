@@ -7,8 +7,11 @@ sealed interface OpponentEvent {
     /** Futterdieb hat sich ein Futter ausgesucht und schnappt nach dem nächsten Zug zu. */
     data class ThiefAnnounced(val kind: Int) : OpponentEvent
 
-    /** Futterdieb hat das markierte Futter geklaut. */
-    data class ThiefStole(val kind: Int) : OpponentEvent
+    /** Futterdieb hat sich [amount] Stück aus dem gesammelten Vorrat geschnappt. */
+    data class ThiefStole(val kind: Int, val amount: Int) : OpponentEvent
+
+    /** Futterdieb hatte nichts zum Klauen im Vorrat und hat stattdessen ein Hindernis gegraben. */
+    data class ThiefDug(val kind: Int) : OpponentEvent
 
     /** Das markierte Futter wurde rechtzeitig eingesammelt. */
     data object ThiefFoiled : OpponentEvent
@@ -54,12 +57,27 @@ object OpponentAI {
         val collected = state.collected.toMutableMap()
         var thiefTarget = state.thiefTargetId
 
-        // 1. Futterdieb: entweder zuschnappen (wenn schon etwas markiert ist) oder neu markieren
+        // 1. Futterdieb: entweder zuschnappen (wenn schon etwas markiert ist) oder neu markieren.
+        //    Wurde das markierte Futter nicht gerettet, klaut er aus dem gesammelten Vorrat –
+        //    ist davon nichts da, gräbt er an der Stelle ein Hindernis.
         if (thiefTarget != null) {
             val pos = board.positions().firstOrNull { board[it]?.id == thiefTarget }
             if (pos != null) {
-                events += OpponentEvent.ThiefStole(board[pos]!!.kind)
-                board = board.removeAll(listOf(pos))
+                val kind = board[pos]!!.kind
+                val inStock = collected[kind] ?: 0
+                val isGoal = state.config.goals.any { it.kind == kind }
+                if (isGoal && inStock > 0) {
+                    val amount = minOf(Difficulty.THIEF_STEALS, inStock)
+                    collected[kind] = inStock - amount
+                    events += OpponentEvent.ThiefStole(kind, amount)
+                    board = board.removeAll(listOf(pos))
+                } else if (board.obstacles.size < Difficulty.MAX_OBSTACLES_ON_BOARD) {
+                    events += OpponentEvent.ThiefDug(kind)
+                    board = board.withBlockers(obstacles = board.obstacles + pos)
+                } else {
+                    events += OpponentEvent.ThiefStole(kind, 0)
+                    board = board.removeAll(listOf(pos))
+                }
             } else {
                 events += OpponentEvent.ThiefFoiled
             }

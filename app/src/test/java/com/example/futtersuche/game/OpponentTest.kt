@@ -83,15 +83,37 @@ class OpponentTest {
     }
 
     @Test
-    fun diebKlautMarkiertesFutterNachDemNaechstenZug() {
+    fun diebKlautAusDemGesammeltenVorrat() {
         val board = BoardGenerator.create(random = Random(1))
         val target = board[Pos(4, 4)]!!
-        val state = stateOf(board, OpponentConfig(thiefInterval = 3), thiefTargetId = target.id)
+        val state = stateOf(
+            board, OpponentConfig(thiefInterval = 3),
+            goals = listOf(Goal(target.kind, 20)),
+            collected = mapOf(target.kind to 7),
+            thiefTargetId = target.id,
+        )
 
         val turn = OpponentAI.act(state, random)
-        assertTrue(turn.events.any { it is OpponentEvent.ThiefStole })
+        assertTrue(OpponentEvent.ThiefStole(target.kind, Difficulty.THIEF_STEALS) in turn.events)
         assertNull(turn.state.thiefTargetId)
-        assertTrue(turn.state.board.positions().none { turn.state.board[it]?.id == target.id })
+        // Vorrat ist kleiner geworden (zufällige Kettenreaktionen danach dürfen wieder etwas bringen)
+        val bonus = turn.steps.sumOf { it.collected[target.kind] ?: 0 }
+        assertEquals(7 - Difficulty.THIEF_STEALS + bonus, turn.state.collected[target.kind])
+    }
+
+    @Test
+    fun diebGraebtHindernisWennVorratLeerIst() {
+        val board = BoardGenerator.create(random = Random(1))
+        val target = board[Pos(4, 4)]!!
+        val state = stateOf(
+            board, OpponentConfig(thiefInterval = 3),
+            goals = listOf(Goal(target.kind, 20)),
+            thiefTargetId = target.id,
+        )
+
+        val turn = OpponentAI.act(state, random)
+        assertTrue(OpponentEvent.ThiefDug(target.kind) in turn.events)
+        assertTrue(Pos(4, 4) in turn.afterActions.obstacles)
     }
 
     @Test

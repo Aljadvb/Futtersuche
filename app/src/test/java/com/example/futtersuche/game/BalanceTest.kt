@@ -80,7 +80,7 @@ class BalanceTest {
                 // Widersacher: Eindringling vertreiben, Diebesgut retten, Hindernisse wegräumen
                 val step = result.steps.first()
                 if (step.intruderChased) value += 3.0
-                if (state.thiefTargetId != null && step.removed.any { board[it]?.id == state.thiefTargetId }) value += 1.0
+                if (state.thiefTargetId != null && step.removed.any { board[it]?.id == state.thiefTargetId }) value += 2.0
                 value += step.obstaclesRemoved.size * 0.5
                 value += first.values.sum() * 0.01 // bei Gleichstand: mehr Steine sind besser
                 if (value > bestValue) {

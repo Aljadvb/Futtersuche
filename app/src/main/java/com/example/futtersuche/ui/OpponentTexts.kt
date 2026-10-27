@@ -2,6 +2,7 @@ package com.example.futtersuche.ui
 
 import com.example.futtersuche.data.Campaign
 import com.example.futtersuche.game.CascadeStep
+import com.example.futtersuche.game.Difficulty
 import com.example.futtersuche.game.OpponentConfig
 import com.example.futtersuche.game.OpponentEvent
 
@@ -33,7 +34,9 @@ fun hintText(campaign: Campaign, behavior: OpponentBehavior): String {
                 "So wirst du sie los: Mach einen Treffer direkt daneben!"
         OpponentBehavior.THIEF ->
             "Ab und zu markiert ${opp.nameWithArticle} ein Futter mit ${opp.emoji}. " +
-                "Nach deinem nächsten Zug schnappt ${opp.nameWithArticle} es sich.\n\n" +
+                "Sammelst du es nicht im nächsten Zug ein, klaut ${opp.nameWithArticle} dir " +
+                "${Difficulty.THIEF_STEALS} Stück davon aus deinem Vorrat – oder gräbt dort " +
+                "einen ${obstacle.name}, wenn du davon noch nichts hast.\n\n" +
                 "So rettest du es: Sammle das markierte Futter sofort ein!"
         OpponentBehavior.INTRUDER ->
             "${opp.nameAtSentenceStart} setzt sich auf ein Feld. Die Zahl zeigt, wie viele Züge noch Zeit bleibt. " +
@@ -59,8 +62,17 @@ fun opponentEventText(campaign: Campaign, event: OpponentEvent): String {
     return when (event) {
         is OpponentEvent.ThiefAnnounced ->
             "${opp.emoji} ${opp.nameAtSentenceStart} hat es auf ein Stück ${campaign.foods[event.kind].name} abgesehen!"
-        is OpponentEvent.ThiefStole ->
-            "${opp.emoji} ${opp.nameAtSentenceStart} hat ein Stück ${campaign.foods[event.kind].name} geklaut!"
+        is OpponentEvent.ThiefStole -> {
+            val food = campaign.foods[event.kind]
+            when (event.amount) {
+                0 -> "${opp.emoji} ${opp.nameAtSentenceStart} hat ein Stück ${food.name} vom Feld geschnappt!"
+                1 -> "${opp.emoji} ${opp.nameAtSentenceStart} hat dir 1 ${food.name} aus dem Vorrat geklaut!"
+                else -> "${opp.emoji} ${opp.nameAtSentenceStart} hat dir ${event.amount} ${food.pluralName} aus dem Vorrat geklaut!"
+            }
+        }
+        is OpponentEvent.ThiefDug ->
+            "${opp.emoji} ${opp.nameAtSentenceStart} hat sich das Stück ${campaign.foods[event.kind].name} " +
+                "geschnappt und dort einen ${obstacle.name} gegraben!"
         OpponentEvent.ThiefFoiled -> "Futter gerettet! ${opp.nameAtSentenceStart} geht leer aus."
         OpponentEvent.ObstaclePlaced -> "${obstacle.emoji} Ein neuer ${obstacle.name}!"
         OpponentEvent.IntruderAppeared -> "${opp.emoji} ${opp.nameAtSentenceStart} ist aufs Feld geschlichen!"
