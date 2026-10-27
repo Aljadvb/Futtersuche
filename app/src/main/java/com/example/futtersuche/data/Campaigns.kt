@@ -36,7 +36,7 @@ data class Obstacle(
 /**
  * Eine Kampagne – komplett als Daten beschrieben.
  * Neue Kampagne = einfach einen weiteren Eintrag in [Campaigns.all] hinzufügen.
- * (Freischalt-Bedingungen kommen in Schritt 6 dazu.)
+ * [unlockedBy] = ID des Achievements, das sie freischaltet (null = von Anfang an spielbar).
  */
 data class Campaign(
     val id: String,
@@ -47,7 +47,12 @@ data class Campaign(
     val foods: List<Food>, // mindestens 6 Sorten (ab Level 20 werden 6 benutzt)
     val backgroundLight: Color,
     val backgroundDark: Color,
-)
+    val unlockedBy: String? = null,
+) {
+    /** Ist die Kampagne spielbar, wenn diese Achievements erreicht sind? */
+    fun isUnlocked(reachedAchievementIds: Set<String>): Boolean =
+        unlockedBy == null || unlockedBy in reachedAchievementIds
+}
 
 object Campaigns {
 
@@ -85,8 +90,11 @@ object Campaigns {
         ),
         backgroundLight = Color(0xFFFFF8E1),
         backgroundDark = Color(0xFF2E2614),
+        unlockedBy = "level_10",
     )
 
     /** Alle Kampagnen in der Reihenfolge des Auswahlbildschirms. */
     val all: List<Campaign> = listOf(hoppel, momo)
+
+    fun byId(id: String): Campaign? = all.firstOrNull { it.id == id }
 }

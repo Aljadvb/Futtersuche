@@ -4,6 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.example.futtersuche.data.Campaign
+import com.example.futtersuche.data.Campaigns
 import com.example.futtersuche.data.ProgressStore
 import com.example.futtersuche.game.Board
 import com.example.futtersuche.game.CascadeStep
@@ -62,6 +63,16 @@ class GameController(
 
     /** Der Hinweis, der gerade angezeigt werden soll (null = keiner). */
     val hint: OpponentBehavior? get() = pendingHints.firstOrNull()
+
+    /** Kurze Einblendungen (z. B. "Erfolg erreicht!"), die nacheinander gezeigt werden. */
+    private var pendingToasts by mutableStateOf(emptyList<String>())
+
+    /** Die Einblendung, die gerade sichtbar ist (null = keine). */
+    val toast: String? get() = pendingToasts.firstOrNull()
+
+    fun dismissToast() {
+        pendingToasts = pendingToasts.drop(1)
+    }
 
     /** true, solange ein Zug abgespielt wird – dann wird Wischen ignoriert. */
     private var busy = false
@@ -139,6 +150,7 @@ class GameController(
         playSteps(result.steps)
 
         state = state.afterMove(result)
+        recordStats(result.steps)
         animationBoard = null
         val lines = mutableListOf<String>()
         if (result.maxChain > 1) lines += "Kettenreaktion x${result.maxChain}!"
@@ -171,7 +183,30 @@ class GameController(
         delay(FALL_DELAY_MS)
         playSteps(turn.steps)
         state = turn.state
+        recordStats(turn.steps)
         animationBoard = null
+    }
+
+    /** Zählt die Statistik für die Achievements mit und meldet neu erreichte. */
+    private fun recordStats(steps: List<CascadeStep>) {
+        for (step in steps) {
+            for ((kind, count) in step.collected) store.addFoodCollected(campaign.id, kind, count)
+            store.addObstaclesRemoved(step.obstaclesRemoved.size)
+            if (step.intruderChased) store.addIntrudersChased(1)
+        }
+        store.recordChain(steps.maxOfOrNull { it.chain } ?: 0)
+        announceNewAchievements()
+    }
+
+    private fun announceNewAchievements() {
+        val texts = mutableListOf<String>()
+        for (achievement in store.unlockNewAchievements()) {
+            texts += "🏆 Erfolg erreicht: ${achievement.emoji} ${achievement.title}"
+            for (unlocked in Campaigns.all.filter { it.unlockedBy == achievement.id }) {
+                texts += "🎉 Neue Kampagne freigeschaltet: ${unlocked.animal.emoji} ${unlocked.title}"
+            }
+        }
+        pendingToasts = pendingToasts + texts
     }
 
     /** Spielt die Durchgänge einer Kettenreaktion nacheinander ab. */
@@ -194,6 +229,8 @@ class GameController(
         if (won) {
             newRecord = store.saveBestScore(campaign.id, level, state.finalScore)
             store.reachLevel(campaign.id, level + 1)
+            if (state.movesLeft >= 5) store.addWinWithFiveMovesLeft()
+            announceNewAchievements()
         }
         levelEnd = LevelEnd(
             won = won,

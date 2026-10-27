@@ -3,6 +3,8 @@ package com.example.futtersuche.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -25,25 +27,30 @@ import com.example.futtersuche.data.ProgressStore
 
 /** Der Spielbildschirm. Die ganze Spiel-Logik steckt im [GameController], hier wird nur angezeigt. */
 @Composable
-fun GameScreen(campaign: Campaign, store: ProgressStore, modifier: Modifier = Modifier) {
+fun GameScreen(campaign: Campaign, store: ProgressStore, onBack: () -> Unit, modifier: Modifier = Modifier) {
     val scope = rememberCoroutineScope()
     val controller = remember(campaign) { GameController(campaign, store, scope) }
 
     val background = if (isSystemInDarkTheme()) campaign.backgroundDark else campaign.backgroundLight
 
+    Box(modifier.fillMaxSize().background(background)) {
     Column(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxSize()
-            .background(background)
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text(
-            text = campaign.title,
-            style = MaterialTheme.typography.headlineSmall,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = onBack) { Text("← Kampagnen") }
+            Text(
+                text = campaign.title,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                textAlign = TextAlign.End,
+            )
+        }
         Spacer(Modifier.height(8.dp))
 
         GameHud(campaign = campaign, state = controller.state)
@@ -64,6 +71,13 @@ fun GameScreen(campaign: Campaign, store: ProgressStore, modifier: Modifier = Mo
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.Center,
+        )
+    }
+
+        ToastBanner(
+            text = controller.toast,
+            onDismiss = controller::dismissToast,
+            modifier = Modifier.align(Alignment.TopCenter),
         )
     }
 

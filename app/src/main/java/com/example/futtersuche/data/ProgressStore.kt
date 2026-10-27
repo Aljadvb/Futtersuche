@@ -48,4 +48,56 @@ class ProgressStore(context: Context) {
     fun clearGame(campaignId: String) {
         prefs.edit().remove("game_$campaignId").apply()
     }
+
+    // ---------- Statistik für Achievements ----------
+
+    fun addFoodCollected(campaignId: String, kind: Int, count: Int) = addInt("food_${campaignId}_$kind", count)
+
+    fun recordChain(chain: Int) {
+        if (chain > prefs.getInt("best_chain", 0)) prefs.edit().putInt("best_chain", chain).apply()
+    }
+
+    fun addWinWithFiveMovesLeft() = addInt("wins_5_left", 1)
+
+    fun addIntrudersChased(count: Int) = addInt("intruders_chased", count)
+
+    fun addObstaclesRemoved(count: Int) = addInt("obstacles_removed", count)
+
+    private fun addInt(key: String, amount: Int) {
+        if (amount != 0) prefs.edit().putInt(key, prefs.getInt(key, 0) + amount).apply()
+    }
+
+    /** Liest die komplette Statistik (für die Achievements). */
+    fun stats(): PlayerStats = PlayerStats(
+        levelReached = Campaigns.all.associate { it.id to currentLevel(it.id) },
+        foodCollected = Campaigns.all.flatMap { campaign ->
+            campaign.foods.indices.map { kind -> "${campaign.id}:$kind" to prefs.getInt("food_${campaign.id}_$kind", 0) }
+        }.toMap(),
+        bestChain = prefs.getInt("best_chain", 0),
+        winsWithFiveMovesLeft = prefs.getInt("wins_5_left", 0),
+        intrudersChased = prefs.getInt("intruders_chased", 0),
+        obstaclesRemoved = prefs.getInt("obstacles_removed", 0),
+    )
+
+    // ---------- Achievements ----------
+
+    /** IDs aller bereits erreichten Achievements. */
+    fun reachedAchievements(): Set<String> =
+        Achievements.all.map { it.id }.filter { prefs.getBoolean("achievement_$it", false) }.toSet()
+
+    /**
+     * Prüft alle Achievements gegen die aktuelle Statistik, speichert neu erreichte
+     * und gibt sie zurück (für die Einblendung). Einmal erreicht bleibt erreicht.
+     */
+    fun unlockNewAchievements(): List<Achievement> {
+        val stats = stats()
+        val already = reachedAchievements()
+        val new = Achievements.all.filter { it.id !in already && it.isReached(stats) }
+        if (new.isNotEmpty()) {
+            val editor = prefs.edit()
+            for (achievement in new) editor.putBoolean("achievement_${achievement.id}", true)
+            editor.apply()
+        }
+        return new
+    }
 }
